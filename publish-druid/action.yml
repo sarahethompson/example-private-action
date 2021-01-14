@@ -1,0 +1,52 @@
+name: 'DRUID publish'
+description: 'Update DRUID element repo and trigger downstream build pipeline.'
+inputs:
+  version:
+    description: 'Version to update to.'
+    required: true
+  product:
+    description: 'Product to update.'
+    required: true
+  ssh_private_key:
+    description: 'Private key for checking out GitLab repo.'
+    required: true
+  ssh_known_hosts:
+    description: 'Known hosts.'
+    required: true
+  element_repo:
+    description: 'Name of GitLab relement repo.'
+    required: true
+  gitlab_token:
+    description: 'GitLab token with api_read access.'
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Create SSH key
+      run: |
+        mkdir -p ~/.ssh/
+        echo "$SSH_PRIVATE_KEY" > ../private.key
+        sudo chmod 600 ../private.key
+        echo "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      shell: bash
+      env:
+        SSH_PRIVATE_KEY: ${{ inputs.ssh_private_key }}
+        SSH_KNOWN_HOSTS: ${{ inputs.ssh_known_hosts }}
+    - name: checkout gitlab repo + push version update
+      run: |
+        # replace with our druid bot account creds.
+        git config --global user.email "sarahstirfry@gmail.com"
+        git config --global user.name "Sarah Thompson"
+        eval $(ssh-agent -s)
+        ssh-add ${{ github.workspace }}/../private.key
+        git clone git@gitlab.com:sarahstirfry/${{ inputs.element_repo }}.git
+        cd ${{ inputs.element_repo }}
+        sed -i -e "s/${{ inputs.product }}_VERSION=.*/${{ inputs.product }}_VERSION=${{ inputs.VERSION }}/g" install.sh
+        git commit -m "Updating Vault Version to ${{ inputs.VERSION }}" -a
+        git push origin master
+        export SHA=$(git rev-parse HEAD)
+        cd ..
+        ${{ github.action_path }}/publish-druid.sh verify_pipeline $SHA
+      shell: bash
+      env:
+        GITLAB_TOKEN: ${{ inputs.gitlab_token }}
